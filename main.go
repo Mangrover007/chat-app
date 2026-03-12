@@ -2,128 +2,139 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"os"
+
 	"io"
 	"log"
 	"net/http"
 
-	daprc "github.com/dapr/go-sdk/client"
-	"github.com/dapr/go-sdk/service/common"
-	daprs "github.com/dapr/go-sdk/service/http"
 	"github.com/gorilla/websocket"
+	"github.com/redis/go-redis/v9"
 )
-
-var sub = &common.Subscription{
-	PubsubName: "pubsub",
-	Topic:      "chat",
-	Route:      "/chat",
-}
 
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
 }
 
-var clients = make(map[*websocket.Conn]bool)
+var PS_PORT = "6379"
+var APP_PORT = "4200"
 
 const (
-	pub_name  = "pub_chat"
-	pub_topic = "chat"
+	channel_name = "pubsub"
 )
 
-type test struct {
-	pub daprc.Client
-	ws  *websocket.Conn
+var rdb *redis.Client
+var sub *redis.PubSub
+
+type ChatRequest struct {
+	Sender  string `json:"sender"`
+	Message string `json:"message"`
 }
 
-func (_t test) upgrade_handler(w http.ResponseWriter, r *http.Request) {
+var clients = make(map[*websocket.Conn]string)
+
+func chat_handler() {
+	for {
+		data, err := sub.ReceiveMessage(context.Background())
+		if err != nil {
+			fmt.Printf("Warning: Failed to get message: %v", err.Error())
+		}
+
+		var msg ChatRequest
+		err = json.Unmarshal([]byte(data.Payload), &msg)
+		if err != nil {
+			fmt.Printf("Could not unmarshal WS payload: %v", err.Error())
+		}
+
+		for ws, username := range clients {
+			if username != msg.Sender {
+				writer, err := ws.NextWriter(1)
+				if err != nil {
+					fmt.Printf("Failed to get a writer for WS: %v", err.Error())
+				}
+
+				_, err = writer.Write([]byte(data.Payload))
+				if err != nil {
+					fmt.Printf("Failed to write message to WS: %v", err.Error())
+				}
+
+				writer.Close()
+			}
+		}
+	}
+}
+
+func websocket_handler(w http.ResponseWriter, r *http.Request) {
+	username := r.Header.Get("X-USERNAME")
+	if username == "" {
+		fmt.Printf("No username header\n")
+		w.WriteHeader(400)
+		return
+	}
+
 	ws, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Fatal("Failed to upgrade connection to WS")
+		fmt.Printf("Failed to connect to WS: %v", err.Error())
 	}
+
 	defer ws.Close()
-	clients[ws] = true
+	defer delete(clients, ws)
+
+	clients[ws] = username
+	go chat_handler()
 
 	for {
-		mt, reader, err := ws.NextReader() // blocking call
+		// TODO: Authenticate WS write request
+		_, reader, err := ws.NextReader()
 		if err != nil {
-			log.Fatal(err.Error())
-			return
+			fmt.Printf("Failed to get a reader for WS: %v", err.Error())
 		}
-		if mt != 1 {
-			continue
-		}
-
-		// TODO: Authenticate Request
 
 		p, err := io.ReadAll(reader)
 		if err != nil {
-			log.Fatal("Failed to read from WS")
+			fmt.Printf("Failed to read message from WS: %v", err.Error())
 		}
 
-		if err = _t.pub.PublishEvent(
-			context.Background(),
-			pub_name,
-			pub_topic,
-			p); err != nil {
-			log.Fatal("Failed to publish event after receiving from WS")
-		}
+		var msg string = string(p)
+		log.Printf("Message: %s\n", msg)
+		rdb.Publish(context.Background(), channel_name, msg)
 	}
-}
-
-func (_t test) topic_chat_handler(
-	ctx context.Context,
-	e *common.TopicEvent,
-) (retry bool, err error) {
-	/*	--------------- Ball Knowledge ------------------
-		if _t.ws == nil {
-			return false, errors.New("Nil pointer for WS connection")
-		}
-		writer, err := _t.ws.NextWriter(1) // message type = 1, get from 'e'
-		if err != nil {
-			log.Fatal("Could not get a writer for WS")
-			return false, nil
-		}
-		defer writer.Close()
-
-		_, err = writer.Write([]byte(e.Data.(string)))
-		if err != nil {
-			log.Fatal("Could not write to WS")
-		}
-	*/
-
-	for ws, is_con := range clients {
-		if ws != nil && is_con {
-			writer, err := ws.NextWriter(1) // message type = 1, get form 'e'
-			if err != nil {
-				log.Fatal("Failed to get a writer for WS")
-				writer.Close()
-				continue
-			}
-
-			data := e.Data.(string)
-			_, err = writer.Write([]byte(data))
-			if err != nil {
-				log.Fatal("Failed to write to WS")
-			}
-
-			writer.Close()
-		}
-	}
-
-	return false, nil
 }
 
 func main() {
-	c, err := daprc.NewClient()
+	if os.Getenv("PS_PORT") != "" {
+		PS_PORT = os.Getenv("PS_PORT")
+	}
+
+	if os.Getenv("APP_PORT") != "" {
+		APP_PORT = os.Getenv("APP_PORT")
+	}
+
+	rdb = redis.NewClient(&redis.Options{
+		Addr:     "localhost:" + PS_PORT,
+		Password: "",
+		DB:       0,
+		Protocol: 2,
+	})
+
+	ctx := context.Background()
+	log.Print(rdb.Ping(ctx))
+
+	sub = rdb.Subscribe(ctx, channel_name)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/ws", websocket_handler)
+	server := http.Server{
+		Addr:    ":" + APP_PORT,
+		Handler: mux,
+	}
+
+	log.Printf("Server listening on port %s", APP_PORT)
+	err := server.ListenAndServe()
 	if err != nil {
-		log.Fatal("Failed to create publisher client. Not starting the server.")
-		return
+		fmt.Printf("Failed to start server: %v", err.Error())
 	}
-	var _t = test{
-		pub: c,
-	}
-	http.HandleFunc("/ws", _t.upgrade_handler)
-	server := daprs.NewServiceWithMux(":6969", nil)
-	server.AddTopicEventHandler(sub, _t.topic_chat_handler)
-	server.Start()
 }
