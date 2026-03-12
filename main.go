@@ -9,11 +9,12 @@ import (
 	daprc "github.com/dapr/go-sdk/client"
 	"github.com/dapr/go-sdk/service/common"
 	daprs "github.com/dapr/go-sdk/service/http"
+	"github.com/go-chi/chi/v5"
 	"github.com/gorilla/websocket"
 )
 
 var sub = &common.Subscription{
-	PubsubName: "pubsub",
+	PubsubName: "pub_chat",
 	Topic:      "chat",
 	Route:      "/chat",
 }
@@ -24,6 +25,8 @@ var upgrader = websocket.Upgrader{
 }
 
 var clients = make(map[*websocket.Conn]bool)
+var senders = make(map[*websocket.Conn]int)
+var count = 0
 
 const (
 	pub_name  = "pub_chat"
@@ -38,9 +41,15 @@ type test struct {
 func (_t test) upgrade_handler(w http.ResponseWriter, r *http.Request) {
 	ws, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Fatal("Failed to upgrade connection to WS")
+		log.Fatal("Failed to upgrade connection to WS", err.Error())
 	}
-	defer ws.Close()
+	senders[ws] = count // extract user ID from request
+	count++
+	defer func() {
+		ws.Close()
+		delete(senders, ws)
+		count -= 1
+	}()
 	clients[ws] = true
 
 	for {
@@ -57,15 +66,15 @@ func (_t test) upgrade_handler(w http.ResponseWriter, r *http.Request) {
 
 		p, err := io.ReadAll(reader)
 		if err != nil {
-			log.Fatal("Failed to read from WS")
+			log.Fatal("Failed to read from WS", err.Error())
 		}
-
+		
 		if err = _t.pub.PublishEvent(
 			context.Background(),
 			pub_name,
 			pub_topic,
 			p); err != nil {
-			log.Fatal("Failed to publish event after receiving from WS")
+			log.Fatal("Failed to publish event after receiving from WS", err.Error())
 		}
 	}
 }
@@ -91,11 +100,22 @@ func (_t test) topic_chat_handler(
 		}
 	*/
 
+	log.Print("Sending messages to clients...")
+	var i int = 0
+
+	var sender *websocket.Conn = nil
+
 	for ws, is_con := range clients {
+		if senders[ws] {
+			sender = ws
+			continue
+		}
+		log.Printf("Sending message to client %d", i)
+		i++
 		if ws != nil && is_con {
 			writer, err := ws.NextWriter(1) // message type = 1, get form 'e'
 			if err != nil {
-				log.Fatal("Failed to get a writer for WS")
+				log.Fatal("Failed to get a writer for WS", err.Error())
 				writer.Close()
 				continue
 			}
@@ -103,11 +123,15 @@ func (_t test) topic_chat_handler(
 			data := e.Data.(string)
 			_, err = writer.Write([]byte(data))
 			if err != nil {
-				log.Fatal("Failed to write to WS")
+				log.Fatal("Failed to write to WS", err.Error())
 			}
 
 			writer.Close()
 		}
+	}
+
+	if sender != nil {
+		senders[sender] = false
 	}
 
 	return false, nil
@@ -116,14 +140,21 @@ func (_t test) topic_chat_handler(
 func main() {
 	c, err := daprc.NewClient()
 	if err != nil {
-		log.Fatal("Failed to create publisher client. Not starting the server.")
+		log.Fatal("Failed to create publisher client. Not starting the server.", err.Error())
 		return
 	}
 	var _t = test{
 		pub: c,
 	}
-	http.HandleFunc("/ws", _t.upgrade_handler)
-	server := daprs.NewServiceWithMux(":6969", nil)
-	server.AddTopicEventHandler(sub, _t.topic_chat_handler)
-	server.Start()
+
+	mux := chi.NewMux()
+	mux.HandleFunc("/ws", _t.upgrade_handler)
+
+	service := daprs.NewServiceWithMux(":6969", mux)
+	service.AddTopicEventHandler(sub, _t.topic_chat_handler)
+
+	err = service.Start()
+	if err != nil {
+		log.Fatal("Failed to start server", err.Error())
+	}
 }
