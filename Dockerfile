@@ -1,5 +1,7 @@
 FROM golang:1.26.1-alpine
 WORKDIR /app
+COPY ./app/go.mod ./app/go.sum ./
+RUN go mod download
 COPY ./app .
 RUN go build -o /bin/app main.go
 
