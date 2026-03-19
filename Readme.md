@@ -322,7 +322,7 @@ func send_message(msg NewMessage, channel string) error {
     if res == 0 {
         _, err := rdb.XGroupCreateMkStream(
             context.Background(),
-            channel,
+            channel,                                  // stream name
             fmt.Sprintf("%s%s", channel, "listener"), // group name
             "$",                                      // consume only new messages
             ).Result() // returns string, error
@@ -330,6 +330,15 @@ func send_message(msg NewMessage, channel string) error {
         if err != nil {
             log.Printf("ERROR: %v", err.Error()) // or return err here
         }
+
+        // could / should separate this into its own service
+        // i dont know how to sync the redis pods and the worker pods
+        // for the same stream tho
+        go _worker(
+            true, 
+            channel,    // stream
+            group_name, // group name is fmt.Sprintf("%s%s", channel, "listener")
+        )
     }
 
     _, err = rdb.XAdd(&redis.XAddArgs{
@@ -371,9 +380,11 @@ goroutine. This is still me prototyping.
 
 Because I think I should keep workers in a different Pods...?
 
+TODO: Learn about `distributed databases` and its design?
+
 ```go
-func _worker(last_id string, chk_backlog bool = true, stream string, group string) {
-    lastid = "0-0"
+func _worker(chk_backlog bool, stream string, group string) {
+    var lastid = "0-0"
     for {
         var myid string
         if chk_backlog {
@@ -440,3 +451,124 @@ impossible.
 Solution: a shared service whose sole purpose is to track who is
 connected where and how. Taken directly from
 [this link](https://ably.com/blog/chat-app-architecture).
+
+4. Finalizing the design
+
+So I was thinking that making a service for the sole purpose of
+tracking connections is similar to the controller-service-model
+architecture.
+
+Anyhow, here is how the connection tracking service would be:
+```go
+type Server struct {
+    Conn_pool map[*websocket.Conn]bool
+    // other fields
+}
+
+var server_pool map[string]Server
+var ws_pool     map[*websocket.Conn]bool
+
+func websocket_handler(w http.ResponseWriter, r *http.Request) {
+    ws := upgrade()
+    ws_pool[ws] = true
+}
+
+func change_server_handler(w http.ResponseWriter, r *http.Request) {
+    server_id := r.Params
+    user_id, server_id_prev := r.Body
+
+    s, ok := server_pool[server_id]
+    if !ok {
+        server_pool[server_id] = Server{
+            Conn_pool: make(map[*websocket.Conn]bool),
+            // other fields
+        }
+    }
+    ws := ws_pool[user_id]
+
+    if server_id_prev != nil {
+        delete(server_pool[server_id_prev].ws_pool, ws)
+    }
+
+    s.Conn_pool[ws] = true
+}
+```
+
+New problem: How do I listen for messages exactly?
+
+For that, I think I need to rethink how I am doing the message
+queue. The entire flow.
+
+- The message arrives as an HTTP POST request to some service.
+- This service extracts message data, and pushes it to a queue.
+- Then, the connection pool service has an API endpoint to send
+messages.
+- This API endpoint will assume I give it the necessary data it
+needs to fulfill the request.
+
+For example, data like server ID, message, sender, etc.
+
+Between steps 2 and 3, someone needs to hit the API endpoint.
+Another service? Where the only thing the service is doing is
+listening for any queue activity, and then consuming it.
+
+So a dedicated service for consumer groups? Yeah?
+
+That is for later I guess. For now I can combine the consumer
+group and the redis stream into a single Pod. This is already
+done in solution 3.
+
+```go
+func new_msg_handler() {} // this is the function we need to call through the API
+```
+
+And thus, the fan-out to the connection pool service for new
+messages rests on the worker function.
+
+Let's see how I can implement it:
+
+```go
+var pubsub = redis.Publisher()
+
+func _worker(chk_backlog bool, stream string, group string) {
+    var lastid = "0-0"
+    for {
+        var myid string
+        if chk_backlog {
+            myid = lastid+
+        } else {
+            myid = ">"
+        }
+
+        items, err := rdb.XReadGroup(&redis.XReadGroupArgs{
+            Group: group,
+            Consumer: "worker",              // idk generate unique ID or something?
+            Streams: []string{stream, myid}, // from docs
+            // other fields as necessary
+        }).Result()
+
+        if err != nil {
+            panic(err)
+        }
+
+        // backlog cleared
+        if len(items) == 0 {
+            chk_backlog = false
+            continue
+        }
+
+        // fan-out each item (message) to connection pool service
+        // pubsub to a middle service for this
+        for msg : items {
+            pubsub.Publish(msg)   
+        }
+    }
+}
+```
+
+And everyone Pod in connection pool service will be listening for
+this pubsub.
+
+Alright the entire flow is done. This is the rough diagram I drew
+of this architecture:
+![please add image]()
