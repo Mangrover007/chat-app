@@ -1,0 +1,27 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: chat-ms
+  labels:
+    app: chat-ms
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: chat-ms
+  template:
+    metadata:
+      labels:
+        app: chat-ms
+    spec:
+      containers:
+      - name: chat-ms
+        image: chat-ms:latest
+        env:
+          - name: POD_UID
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.uid
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 8080
