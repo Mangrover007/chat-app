@@ -1016,72 +1016,72 @@ messages down websocket connections, there is a third thing that needs to
 happen:
 3. Register the websocket connection to the global connection pool, so in
 `map[UUID]*websocket.Conn`
-
-chat-app/
-├── cmd/
-│   └── server/
-│       └── main.go              # entry point (bootstraps everything)
-│
-├── internal/
-│   ├── app/
-│   │   ├── server.go           # app initialization (wires dependencies)
-│   │   └── lifecycle.go        # startup/shutdown logic
-│   │
-│   ├── config/
-│   │   └── config.go           # env config (redis, postgres, etc.)
-│   │
-│   ├── transport/
-│   │   ├── http/
-│   │   │   ├── router.go       # routes setup
-│   │   │   ├── middleware.go   # auth, logging, etc.
-│   │   │   └── handlers/
-│   │   │       ├── message.go  # POST /:guild/:channel
-│   │   │       └── guild.go    # switch guild endpoint
-│   │   │
-│   │   └── websocket/
-│   │       ├── handler.go      # ws_handler
-│   │       ├── hub.go          # connection pool (conn_pool)
-│   │       └── client.go       # wrapper around websocket conn
-│   │
-│   ├── domain/
-│   │   ├── message.go         # Message struct
-│   │   ├── user.go            # User struct
-│   │   └── guild.go
-│   │
-│   ├── service/
-│   │   ├── message_service.go # core business logic (fanout logic)
-│   │   ├── guild_service.go   # guild membership logic
-│   │   └── connection_service.go # manages maps (guild_user, user_guild)
-│   │
-│   ├── repository/
-│   │   ├── postgres/
-│   │   │   └── guild_repo.go  # fetch guild members
-│   │   │
-│   │   └── redis/
-│   │       ├── user_map.go    # user:<uuid> → server_id
-│   │       └── stream.go      # XADD, XREADGROUP logic
-│   │
-│   ├── stream/
-│   │   ├── consumer.go        # consume_msg_handler
-│   │   └── producer.go        # push to streams
-│   │
-│   ├── auth/
-│   │   └── jwt.go             # JWT parsing (decouple from handler)
-│   │
-│   ├── state/
-│   │   ├── connection_pool.go # conn_pool
-│   │   ├── user_guild.go      # map[user]guild
-│   │   └── guild_user.go      # map[guild]users
-│   │
-│   └── util/
-│       └── logger.go
-│
-├── pkg/                       # reusable (optional)
-│   └── uuid/
-│       └── uuid.go
-│
-├── scripts/
-│   └── run.sh
-│
-├── go.mod
-└── README.md
+    
+    chat-app/
+    ├── cmd/
+    │   └── server/
+    │       └── main.go              # entry point (bootstraps everything)
+    │
+    ├── internal/
+    │   ├── app/
+    │   │   ├── server.go           # app initialization (wires dependencies)
+    │   │   └── lifecycle.go        # startup/shutdown logic
+    │   │
+    │   ├── config/
+    │   │   └── config.go           # env config (redis, postgres, etc.)
+    │   │
+    │   ├── transport/
+    │   │   ├── http/
+    │   │   │   ├── router.go       # routes setup
+    │   │   │   ├── middleware.go   # auth, logging, etc.
+    │   │   │   └── handlers/
+    │   │   │       ├── message.go  # POST /:guild/:channel
+    │   │   │       └── guild.go    # switch guild endpoint
+    │   │   │
+    │   │   └── websocket/
+    │   │       ├── handler.go      # ws_handler
+    │   │       ├── hub.go          # connection pool (conn_pool)
+    │   │       └── client.go       # wrapper around websocket conn
+    │   │
+    │   ├── domain/
+    │   │   ├── message.go         # Message struct
+    │   │   ├── user.go            # User struct
+    │   │   └── guild.go
+    │   │
+    │   ├── service/
+    │   │   ├── message_service.go # core business logic (fanout logic)
+    │   │   ├── guild_service.go   # guild membership logic
+    │   │   └── connection_service.go # manages maps (guild_user, user_guild)
+    │   │
+    │   ├── repository/
+    │   │   ├── postgres/
+    │   │   │   └── guild_repo.go  # fetch guild members
+    │   │   │
+    │   │   └── redis/
+    │   │       ├── user_map.go    # user:<uuid> → server_id
+    │   │       └── stream.go      # XADD, XREADGROUP logic
+    │   │
+    │   ├── stream/
+    │   │   ├── consumer.go        # consume_msg_handler
+    │   │   └── producer.go        # push to streams
+    │   │
+    │   ├── auth/
+    │   │   └── jwt.go             # JWT parsing (decouple from handler)
+    │   │
+    │   ├── state/
+    │   │   ├── connection_pool.go # conn_pool
+    │   │   ├── user_guild.go      # map[user]guild
+    │   │   └── guild_user.go      # map[guild]users
+    │   │
+    │   └── util/
+    │       └── logger.go
+    │
+    ├── pkg/                       # reusable (optional)
+    │   └── uuid/
+    │       └── uuid.go
+    │
+    ├── scripts/
+    │   └── run.sh
+    │
+    ├── go.mod
+    └── README.md
