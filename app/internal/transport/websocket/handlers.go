@@ -24,7 +24,7 @@ func NewHandler(wss *service.WS_Service) *WS_Handler {
 }
 
 func (wsh *WS_Handler) UpgradeConn(w http.ResponseWriter, r *http.Request) {
-	user_id := r.Header.Get("X-User-ID")
+	user_id := r.Header.Get("x-uid")
 
 	log.Print("NEW CONNECTION: ", user_id)
 
@@ -39,7 +39,7 @@ func (wsh *WS_Handler) UpgradeConn(w http.ResponseWriter, r *http.Request) {
 }
 
 func (wsh *WS_Handler) Change_Guild(w http.ResponseWriter, r *http.Request) {
-	user_id := r.Header.Get("X-User-ID")
+	user_id := r.Header.Get("x-uid")
 	guild_id := r.PathValue("guild_id")
 	wsh.wss.Change_Guild(user_id, guild_id)
 	w.WriteHeader(200)
