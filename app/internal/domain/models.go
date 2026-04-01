@@ -1,8 +1,12 @@
 package domain
 
 type Payload struct {
-	Username string `json:"username"`
 	Content  string `json:"content"`
+}
+
+type RegisterPayload struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
 }
 
 type Message struct {
