@@ -16,6 +16,8 @@ func NewRouter(psql *pgx.Conn, rdb *redis.Client) *http.ServeMux {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/{guild_id}/{channel_id}", mh.Msg_handler)
+	mux.HandleFunc("/register", mh.Register_Handler)
+	mux.HandleFunc("/{guild_id}", mh.Guild_Join_Handler)
 
 	return mux
 }

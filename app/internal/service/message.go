@@ -9,6 +9,12 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
+// This file contains mostly SQL queries.
+
+// It contains all business logic related to transport.http
+// It is the service layer of transport.http, pertaining to
+// the controller --> service model
+
 type MessageService struct {
 	psql *pgx.Conn
 	rdb  *redis.Client
@@ -28,7 +34,7 @@ func (ms *MessageService) Send_msg(msg *domain.Message) {
 		msg.Guild,
 	)
 	if err != nil {
-		log.Print("ERROR: ", err.Error())
+		log.Print("ERROR (messages.go): ", err.Error())
 		return
 	}
 
@@ -41,13 +47,13 @@ func (ms *MessageService) Send_msg(msg *domain.Message) {
 		var user_id string
 		err := res.Scan(&user_id)
 		if err != nil {
-			log.Print("ERROR: ", err.Error())
+			log.Print("ERROR (messages.go): ", err.Error())
 			return
 		}
 
 		server_id, err := ms.rdb.Get(context.Background(), "user:"+user_id).Result()
 		if err != nil {
-			log.Print("ERROR: ", err.Error())
+			log.Print("ERROR (messages.go): ", err.Error())
 			return
 		}
 
@@ -65,4 +71,41 @@ func (ms *MessageService) Send_msg(msg *domain.Message) {
 			},
 		})
 	}
+}
+
+func (ms *MessageService) Register_user(username, password string) (uid string, err error) {
+	res, err := ms.psql.Query(context.Background(), `
+		INSERT INTO users (username, password)
+		VALUES ($1, $2)
+		RETURNING id`,
+		username, password,
+	)
+
+	if err != nil {
+		log.Print("ERROR (messages.go): ", err.Error())
+	}
+
+	if res.Next() {
+		err = res.Scan(&uid)
+		if err != nil {
+			log.Print("ERROR: ", err.Error())
+		}
+		res.Close()
+	}
+
+	return uid, err
+}
+
+func (ms *MessageService) Guild_Join(uid, guild_id string) error {
+	_, err := ms.psql.Exec(context.Background(), `
+		INSERT INTO guild_user (member_id, guild_id)
+		VALUES ($1, $2)`,
+		uid, guild_id,
+	)
+
+	if err != nil {
+		log.Print("ERROR (messages.go): ", err.Error())
+	}
+
+	return err
 }

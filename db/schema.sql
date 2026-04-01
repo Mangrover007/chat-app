@@ -19,35 +19,55 @@
 -- Ref: users.ID < guild_user.member_id
 -- Ref: guilds.ID < guild_user.guild_id
 
+CREATE EXTENSION IF NOT EXISTS pgcrypto ;
+
 CREATE TABLE users (
-    id       TEXT       PRIMARY KEY,
-    username VARCHAR(255)
+    id       UUID       PRIMARY KEY DEFAULT gen_random_uuid(),
+    username VARCHAR(255),
+    password TEXT
 ) ;
 
 CREATE TABLE guilds (
-    id TEXT PRIMARY KEY
+    id   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name TEXT
 ) ;
 
 CREATE TABLE guild_user (
-    member_id   TEXT    REFERENCES users(id),
-    guild_id    TEXT    REFERENCES guilds(id),
+    member_id   UUID    REFERENCES users(id),
+    guild_id    UUID    REFERENCES guilds(id),
     PRIMARY KEY (member_id, guild_id)
 ) ;
 
-INSERT INTO users (id, username) VALUES
-    ('alice123', 'alice'),
-    ('bob123', 'bob'),
-    ('guava123', 'guava')
+INSERT INTO users (username, password) VALUES
+    ('alice', 'alice123'),
+    ('bob', 'bob123'),
+    ('guava', 'guava123')
 ;
 
-INSERT INTO guilds (id) VALUES
+INSERT INTO guilds (name) VALUES
     ('guild_A'),
     ('guild_B')
 ;
 
-INSERT INTO guild_user (member_id, guild_id) VALUES
-    ('alice123', 'guild_A'),
-    ('alice123', 'guild_B'),
-    ('bob123', 'guild_A'),
-    ('guava123', 'guild_B')
-;
+INSERT INTO guild_user (member_id, guild_id)
+VALUES
+(
+    (SELECT id FROM users WHERE username = 'alice'),
+    (SELECT id FROM guilds WHERE name = 'guild_A')
+),
+(
+    (SELECT id FROM users WHERE username = 'bob'),
+    (SELECT id FROM guilds WHERE name = 'guild_A')
+),
+(
+    (SELECT id FROM users WHERE username = 'guava'),
+    (SELECT id FROM guilds WHERE name = 'guild_A')
+),
+(
+    (SELECT id FROM users WHERE username = 'alice'),
+    (SELECT id FROM guilds WHERE name = 'guild_B')
+),
+(
+    (SELECT id FROM users WHERE username = 'bob'),
+    (SELECT id FROM guilds WHERE name = 'guild_B')
+);
