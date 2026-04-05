@@ -10,7 +10,7 @@ import (
 	"github.com/Mangrover007/discord-clone-2/app/internal/stream"
 	api "github.com/Mangrover007/discord-clone-2/app/internal/transport/http"
 	ws "github.com/Mangrover007/discord-clone-2/app/internal/transport/websocket"
-	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -23,9 +23,9 @@ func main() {
 	cp := state.NewConnPool()
 
 	// -------------------- DB CONNECTION -------------------------
-	psql, err := pgx.Connect(context.Background(), os.Getenv("DB_URL"))
+	psql, err := pgxpool.New(context.Background(), os.Getenv("DB_URL"))
 	if err != nil {
-		log.Fatal("Server crashed", err.Error())
+		log.Print("Server crashed", err.Error())
 		return
 	}
 
@@ -36,10 +36,10 @@ func main() {
 		Password: os.Getenv("REDIS_PASSWORD"),
 	})
 	_ = rdb.XGroupCreateMkStream(context.Background(), server_id, "group:g1", "$").Err()
-	// if err != nil {
-	// 	log.Fatal("ERROR: Could not make stream: ", err.Error())
-	// 	return
-	// }
+	if err != nil {
+		log.Print("ERROR: Could not make stream: ", err.Error())
+		return
+	}
 
 	// ------------------------------------------------------------
 
@@ -58,6 +58,6 @@ func main() {
 	log.Print("Pod ID: ", server_id)
 	err = server.ListenAndServe()
 	if err != nil {
-		log.Fatal("FATAL: server crashed", err.Error())
+		log.Print("FATAL: server crashed", err.Error())
 	}
 }

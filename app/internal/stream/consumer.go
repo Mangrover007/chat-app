@@ -2,6 +2,7 @@ package stream
 
 import (
 	"context"
+	"encoding/json"
 	"log"
 
 	"github.com/Mangrover007/discord-clone-2/app/internal/state"
@@ -36,10 +37,11 @@ func Consumer(rdb *redis.Client, stream string, group string, cp *state.Conn_Poo
 		}
 
 		// Values: map[string]interface{}{
-		// 		"Content":  msg.Content,
-		// 		"Username": msg.Username,
-		// 		"Guild":    msg.Guild,
-		// 		"Channel":  msg.Channel,
+		// 		"Content":    msg.Content,
+		// 		"Username":   msg.Username,
+		// 		"Guild":      msg.Guild,
+		// 		"Channel":    msg.Channel,
+		// 		"Timestamp":  time.Now(),
 		// }
 
 		if len(res[0].Messages) == 0 {
@@ -47,22 +49,35 @@ func Consumer(rdb *redis.Client, stream string, group string, cp *state.Conn_Poo
 			continue
 		}
 
-		log.Printf("New Message: %+v", res[0].Messages)
+		// log.Printf("New Message: %+v", res[0].Messages)
 		
 		for _, msg := range res[0].Messages {
 			guild_id := msg.Values["Guild"]
 			users := cp.Get_Users_From_Guild(guild_id.(string))
 			
-			log.Printf("USER ID LIST: %+v", users)
+			// log.Printf("USER ID LIST: %+v", users)
 			
 			for user_id, _ := range users {
-				if user_id == msg.Values["UserID"] {
+				// DONT skip this guy
+				// if user_id == msg.Values["UserID"] {
+				// 	continue
+				// }
+
+				ws := cp.Get_WS_Conn(user_id)
+				
+				if ws == nil {
+					log.Print("GETTING WS FOR USER_ID: ", user_id)
+					log.Printf("WS FOR USER_ID %s IS: %+v", user_id, ws)
 					continue
 				}
-				log.Print("SENDER, RECEIVER: ", msg.Values["UserID"], " ", user_id)
-				ws := cp.Get_WS_Conn(user_id)
-				writer, _ := ws.NextWriter(1)
-				writer.Write([]byte(msg.Values["Content"].(string)))
+				
+				writer, err := ws.NextWriter(1)
+				if err != nil {
+					log.Printf("ERROR (consumer.go): %s line %d", err.Error(), 67)
+					writer.Close()
+					continue
+				}
+				json.NewEncoder(writer).Encode(msg.Values)
 				writer.Close()
 			}
 
@@ -70,3 +85,13 @@ func Consumer(rdb *redis.Client, stream string, group string, cp *state.Conn_Poo
 		}
 	}
 }
+
+/*
+There are two problems in all of this:
+
+1. how is a user getting queried for in connection pool when they havent logged on and connected
+
+2. why im still getting a nil pointer dereference when the ws connection is not nil, on writer.Close() of all things
+
+first, what is write: broken pipe error? as i understand it, it is related to connection pools but i have little idea about those.
+*/
