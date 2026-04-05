@@ -1085,3 +1085,47 @@ happen:
     │
     ├── go.mod
     └── README.md
+
+
+# TODO / Future
+## High priority
+- Test scalability, write a program to test with 1,000 concurrent users
+- Eventually scale to 10,000 concurrent users
+
+## Low priority
+- Add video call support
+- Add Audio call support
+- Add Video and Image messages
+
+6. PROBLEM
+
+Remember how I made one DB call to get all user IDs from a guild on every
+single message, and queries the Redis store for each user ID to get the
+internal server ID // Pod ID? For 2 clients sending 100 messages each,
+this halts the system to a devastating average of ~18 seconds! That is
+way too slow.
+
+The problems are the following:
+A. Keep a global record of all users connected to all internal Pods.
+B. At all times, know exactly which user is joined to which guild.
+
+~~Problem A. can be solved pretty easily. Just keep a key-value pair in
+Redis, key being `<identifier>:<Pod ID>` and value being a set of user IDs.~~
+
+Forget what I said earlier, because that maps what I want in the wrong
+direction (server --> user). What I need is user --> server direction.
+
+Here's a thought that fixes problem A.
+
+In Redis, simply keep a `guild:<guild ID>` key, with two values:
+`user:<user ID>` and `server:<Pod ID>`
+
+When a new message arrives, we know which guild it arrived for. Whichever
+Pod picks up that request can query Redis store for `guild:<guild ID>`
+and simply get the ball knowledge of which user is connected to which Pod
+instantly.
+
+Genius wow.
+
+With this, problem B is also easy to solve. I am basically moving my
+connection_pool.go struct fields to Redis. This could work maybe?
