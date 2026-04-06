@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log"
+	"strings"
 
 	"github.com/Mangrover007/discord-clone-2/app/internal/state"
 	"github.com/redis/go-redis/v9"
@@ -22,7 +23,7 @@ func Consumer(rdb *redis.Client, stream string, group string, cp *state.Conn_Poo
 		}
 
 		res, err := rdb.XReadGroup(context.Background(), &redis.XReadGroupArgs{
-			Streams: []string{stream, myid},
+			Streams: []string{"server:" + stream, myid},
 			Group: group,
 			Block: 0,
 			Consumer: "consumer:c1",
@@ -53,7 +54,20 @@ func Consumer(rdb *redis.Client, stream string, group string, cp *state.Conn_Poo
 		
 		for _, msg := range res[0].Messages {
 			guild_id := msg.Values["Guild"]
-			users := cp.Get_Users_From_Guild(guild_id.(string))
+			res, err := rdb.SMembers(
+				context.Background(),
+				"guild:" + guild_id.(string),
+			).Result()
+			if err != nil {
+				log.Printf("ERROR (consumer.go): %s, on line %d", err.Error(), 62)
+				continue
+			}
+			var users = make(map[string]bool)
+			for _, member := range res {
+				val := strings.Split(member, ":")
+				users[val[0]] = true
+			}
+			// users := cp.Get_Users_From_Guild(guild_id.(string))
 			
 			// log.Printf("USER ID LIST: %+v", users)
 			
@@ -66,11 +80,12 @@ func Consumer(rdb *redis.Client, stream string, group string, cp *state.Conn_Poo
 				ws := cp.Get_WS_Conn(user_id)
 				
 				if ws == nil {
-					log.Print("GETTING WS FOR USER_ID: ", user_id)
-					log.Printf("WS FOR USER_ID %s IS: %+v", user_id, ws)
+					log.Print("NIL WS: ", user_id)
+					// log.Print("GETTING WS FOR USER_ID: ", user_id)
+					// log.Printf("WS FOR USER_ID %s IS: %+v", user_id, ws)
 					continue
 				}
-				
+
 				writer, err := ws.NextWriter(1)
 				if err != nil {
 					log.Printf("ERROR (consumer.go): %s line %d", err.Error(), 67)
@@ -81,7 +96,7 @@ func Consumer(rdb *redis.Client, stream string, group string, cp *state.Conn_Poo
 				writer.Close()
 			}
 
-			rdb.XAck(context.Background(), stream, group, msg.ID)
+			rdb.XAck(context.Background(), "server:" + stream, group, msg.ID)
 		}
 	}
 }

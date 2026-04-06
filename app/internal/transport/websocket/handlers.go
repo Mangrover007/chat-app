@@ -36,6 +36,7 @@ func (wsh *WS_Handler) UpgradeConn(w http.ResponseWriter, r *http.Request) {
 	}
 
 	wsh.wss.Add_User(user_id, ws)
+	log.Print("WS ADDED FOR USER: ", user_id)
 }
 
 func (wsh *WS_Handler) Change_Guild(w http.ResponseWriter, r *http.Request) {
