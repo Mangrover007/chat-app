@@ -5,7 +5,7 @@ import threading, base64
 
 import websocket
 
-CLIENT_NUM = 2
+CLIENT_NUM = 100
 MSG_NUM = 100
 
 # intercept client send messages to catch and log everything
@@ -91,13 +91,15 @@ class Client(Recorder):
                 os._exit(1)
         return
 
-    def _recv_msgs(self, signal: threading.Event):
-        while not signal.is_set():
+    def _recv_msgs(self):
+        while len(self.msgs) < MSG_NUM * CLIENT_NUM:
             try:
                 msg = self.ws.recv()
                 self.Record_msg(json.loads(msg))
                 self.msg_recv.append(json.loads(msg))
+                # print('MSG RECEIVED', time.perf_counter())
             except websocket.WebSocketTimeoutException as e:
+                # print('TIMED THE FUCK OUT MAN')
                 continue
             except websocket.WebSocketConnectionClosedException as e:
                 print('WS connection closed')
@@ -116,14 +118,16 @@ class Client(Recorder):
         self._join_guild(guild_id=guild_id)
         self._login_guild(guild_id=guild_id)
 
-        e = threading.Event()
+        # e = threading.Event()
         t1 = threading.Thread(target=self._send_msgs, kwargs={
             'guild_id': guild_id,
             'channel_id': 'temp',
         })
-        t2 = threading.Thread(target=self._recv_msgs, kwargs={
-            'signal': e,
-        })
+        # t2 = threading.Thread(target=self._recv_msgs, kwargs={
+        #     'signal': e,
+        # })
+
+        t2 = threading.Thread(target=self._recv_msgs)
 
         # t2.start()
         # t1.start()
@@ -166,13 +170,13 @@ threads.')
         t1, _ = t
         t1.join()
 
-    print('ALL sending threads are joined. Waiting 5 seconds before \
-closing WS connections to ensure all messages are received.')
+#     print('ALL sending threads are joined. Waiting 5 seconds before \
+# closing WS connections to ensure all messages are received.')
 
-    time.sleep(5)
+#     time.sleep(5)
 
-    for c in clients:
-        c.ws.close()
+#     for c in clients:
+#         c.ws.close()
 
     print('Joining all receiving threads.')
 
