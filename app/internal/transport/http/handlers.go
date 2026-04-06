@@ -40,14 +40,17 @@ func (mh *MessageHandler) Msg_handler(w http.ResponseWriter, r *http.Request) {
 	err = json.Unmarshal(p, &payload)
 
 	
+	timestamp := time.Now().UTC()
+
 	// Add message to Redis stream belonging to this Pod
 	mh.ms.Send_msg(&domain.Message{
 		Content:  payload.Content,
 		UserID:   r.Header.Get("x-uid"),
 		Guild:    guild_id,
 		Channel:  channel_id,
+		Timestamp: timestamp,
 	})
-	
+
 	if err != nil {
 		log.Print("ERROR (handlers.go): ", err.Error())
 		w.WriteHeader(http.StatusInternalServerError)
@@ -58,7 +61,7 @@ func (mh *MessageHandler) Msg_handler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]any{
 		"Content": payload.Content,
 		"Sender": uid,
-		"Timestamp": time.Now(),
+		"Timestamp": timestamp,
 	})
 }
 

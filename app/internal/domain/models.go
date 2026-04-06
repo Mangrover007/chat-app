@@ -1,5 +1,7 @@
 package domain
 
+import "time"
+
 type Payload struct {
 	Content  string `json:"content"`
 }
@@ -10,8 +12,9 @@ type RegisterPayload struct {
 }
 
 type Message struct {
-	Content  string
-	UserID   string
-	Guild    string // TODO: UUID later
-	Channel  string // TODO: UUID later
+	Content   string
+	UserID    string
+	Guild     string // TODO: UUID later
+	Channel   string // TODO: UUID later
+	Timestamp time.Time
 }
