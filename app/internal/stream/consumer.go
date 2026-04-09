@@ -27,7 +27,7 @@ func Consumer(rdb *redis.Client, stream string, group string, cp *state.Conn_Poo
 			Group: group,
 			Block: 0,
 			Consumer: "consumer:c1",
-			Count: 10,
+			Count: 100000,
 		}).Result()
 
 		// log.Print("READ")
@@ -49,7 +49,7 @@ func Consumer(rdb *redis.Client, stream string, group string, cp *state.Conn_Poo
 			backlog = false
 			continue
 		}
-
+		
 		// log.Printf("New Message: %+v", res[0].Messages)
 		
 		for _, msg := range res[0].Messages {
@@ -57,43 +57,50 @@ func Consumer(rdb *redis.Client, stream string, group string, cp *state.Conn_Poo
 			res, err := rdb.SMembers(
 				context.Background(),
 				"guild:" + guild_id.(string),
-			).Result()
-			if err != nil {
-				log.Printf("ERROR (consumer.go): %s, on line %d", err.Error(), 62)
-				continue
-			}
-			var users = make(map[string]bool)
-			for _, member := range res {
-				val := strings.Split(member, ":")
-				users[val[0]] = true
-			}
-			// users := cp.Get_Users_From_Guild(guild_id.(string))
-			
-			// log.Printf("USER ID LIST: %+v", users)
-			
+				).Result()
+				if err != nil {
+					// log.Printf("ERROR (consumer.go): %s, on line %d", err.Error(), 62)
+					continue
+				}
+				var users = make(map[string]bool)
+				for _, member := range res {
+					val := strings.Split(member, ":")
+					users[val[0]] = true
+				}
+				// users := cp.Get_Users_From_Guild(guild_id.(string))
+				
+				// log.Printf("USER ID LIST: %+v", users)
+				
+			data, _ := json.Marshal(msg.Values)
 			for user_id, _ := range users {
 				// DONT skip this guy
 				// if user_id == msg.Values["UserID"] {
 				// 	continue
 				// }
 
-				ws := cp.Get_WS_Conn(user_id)
+				wc := cp.Get_WS_Conn(user_id)
 				
-				if ws == nil {
-					log.Print("NIL WS: ", user_id)
+				if wc == nil {
+					// log.Print("NIL WS: ", user_id)
 					// log.Print("GETTING WS FOR USER_ID: ", user_id)
 					// log.Printf("WS FOR USER_ID %s IS: %+v", user_id, ws)
 					continue
 				}
 
-				writer, err := ws.NextWriter(1)
-				if err != nil {
-					log.Printf("ERROR (consumer.go): %s line %d", err.Error(), 67)
-					writer.Close()
-					continue
+				// writer, err := ws.NextWriter(1)
+				// if err != nil {
+				// 	log.Printf("ERROR (consumer.go): %s line %d", err.Error(), 91)
+				// 	// writer.Close()
+				// 	continue
+				// }
+				// json.NewEncoder(writer).Encode(msg.Values)
+				// writer.Close()
+
+				// ------------------------------------ CHANNEL REPLACEMENT --------------------------------
+				if len(wc) == cap(wc) {
+					log.Print("CHANNEL FULL")
 				}
-				json.NewEncoder(writer).Encode(msg.Values)
-				writer.Close()
+				wc <- data
 			}
 
 			rdb.XAck(context.Background(), "server:" + stream, group, msg.ID)
