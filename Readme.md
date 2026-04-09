@@ -151,11 +151,6 @@ go build -o chat-app cmd/server/main.go
 # 2026/04/07 01:48:29 Pod ID: s1
 ```
 
-> NOTE: because POD_UID variable is not assigned at runtime by
-> kubernetes, the app won't start a second time because the
-> redis stream key would already exist. Ensure you have deleted 
-> the redis stream key before re-running the binary.
-
 ## Minikube
 
 If you want to run it on minikube, follow the instructions below:
