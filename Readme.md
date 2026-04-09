@@ -1,29 +1,45 @@
-# Project setup
+# Project Setup
 
-To get the app running, ensure you have the following installed
-by running the given commands.
+## Prerequisites
 
-1. go
+Install the following tools and verify installation.
+
+### 1. Go
+Installation: https://go.dev/doc/install
+
 ```bash
 go version
-# go version go1.26.0-X:nodwarf5 linux/amd64
+# expected: go version go1.26.x <os>/<arch>
 ```
 
-2. postgresql
+---
+
+### 2. PostgreSQL
+Installation: https://www.postgresql.org/download/
+
 ```bash
 psql --version
-# psql (PostgreSQL) 18.2
+# expected: psql (PostgreSQL) 18.x
 ```
 
-3. redis
+---
+
+### 3. Redis
+Installation: https://redis.io/docs/latest/operate/oss_and_stack/install/install-redis/
+
 ```bash
 redis-cli -v
-# valkey-cli 8.1.4 (git:5f4bae3e-dirty)
+# expected: redis-cli x.x.x
 ```
 
-4. docker
+---
+
+### 4. Docker (Optional, required for Kubernetes)
+Installation: https://docs.docker.com/get-docker/
+
 ```bash
 docker version
+# expected:
 # Client:
 #  Version:           29.2.1
 #  API version:       1.53
@@ -33,33 +49,44 @@ docker version
 #  OS/Arch:           linux/amd64
 #  Context:           default
 
-# Server: Docker Engine - Community
+# Server:
 #  Engine:
-#   Version:          29.2.0
+#   Version:          29.2.1
 #   API version:      1.53 (minimum version 1.44)
-#   Go version:       go1.25.6
-#   Git commit:       9c62384
-#   Built:            Mon Jan 26 19:26:07 2026
+#   Go version:       go1.25.6 X:nodwarf5
+#   Git commit:       6bc6209b88
+#   Built:            Thu Feb  5 10:59:55 2026
 #   OS/Arch:          linux/amd64
 #   Experimental:     false
 #  containerd:
 #   Version:          v2.2.1
-#   GitCommit:        dea7da592f5d1d2b7755e3a161be07f43fad8f75
+#   GitCommit:        dea7da592f5d1d2b7755e3a161be07f43fad8f75.m
 #  runc:
-#   Version:          1.3.4
-#   GitCommit:        v1.3.4-0-gd6d73eb8
+#   Version:          1.4.0
+#   GitCommit:        
 #  docker-init:
 #   Version:          0.19.0
 #   GitCommit:        de40ad0
 ```
 
-Optionally, this project can also be run on a kubernetes cluster.
-For `minikube`, set up is as follows:
+---
 
-1. Ensure minikube is up and running by running the following
-command:
+### 5. Minikube (Optional)
+- Minikube docs: https://minikube.sigs.k8s.io/docs/start/
+- Kubernetes docs: https://kubernetes.io/docs/home/
+
+> Note: Docker must be installed before using Minikube.
+
+---
+
+## Minikube Setup (Optional)
+
+### 1. Verify Minikube is running
+
 ```bash
+minikube start
 minikube status
+# expected:
 # minikube
 # type: Control Plane
 # host: Running
@@ -68,166 +95,264 @@ minikube status
 # kubeconfig: Configured
 ```
 
-2. SSH into minikube and run the commands below:
+---
+
+### 2. Prepare filesystem inside Minikube
+
+SSH into minikube docker container and make `/db/psql` directory
+at the filesystem root.
+
 ```bash
-# ssh into minikube
 minikube ssh
-
-# make a directory at root
 sudo mkdir -p /db/psql
-
-# exit ssh
 exit
 ```
 
-3. Ensure app's docker images are visible to the minikube docker
-environment:
+---
+
+### 3. Use Minikube Docker environment
+
 ```bash
+# point your shell to minikube's internal docker daemon
 eval $(minikube docker-env)
-
-# build the image from the dockerfile in /app and in /db
-docker build -t chat-ms app/
-docker build -t postgres-custom db/
-
-# ensure both images are on minikube's docker environment
-docker images
-
-# example output
-# chat-ms:latest                                    dfa5e1cef3f9       16.7MB             0B    U
-# postgres-custom:latest                            d8a5e98927d8        456MB             0B    U
 ```
 
-# Running the project
-## Locally
-1. Ensure `discordv2` DB exists. You can check by logging in to 
-psql and running `\l`:
+What this does:
+- Redirects all `docker` commands to **Minikube’s internal Docker daemon**
+- Required so Kubernetes can see locally built images
+- Without this, your images will NOT be available inside the cluster
+
+---
+
+### Build Images
+
 ```bash
+# build backend image from Dockerfile in app/
+docker build -t chat-ms app/
+
+# build custom postgres image from Dockerfile in db/
+docker build -t postgres-custom db/
+```
+
+About the custom PostgreSQL image:
+
+- The official PostgreSQL Docker image automatically runs any `.sql`, `.sql.gz`, or `.sh` files placed in:
+  ```
+  /docker-entrypoint-initdb.d/
+  ```
+  during **initial database creation**
+
+- This is how the schema in `db/schema.sql` gets applied automatically on container startup
+
+- Official documentation:
+  https://hub.docker.com/_/postgres
+
+- Direct reference (Initialization scripts section):
+  https://hub.docker.com/_/postgres#initialization-scripts
+
+> [!NOTE]
+> - Scripts run **only on first initialization** (i.e., when the data directory is empty)
+> - If the container restarts with existing data, scripts will NOT run again. This is desired behavior.
+
+---
+
+## Running the Project
+
+## Local Setup
+
+### 1. Create Database
+
+For linux users, run these commands in the terminal:
+
+```bash
+# switch to postgres system user
 sudo -iu postgres
 
+# open PostgreSQL interactive shell
 psql
 
+# list all databases
 \l
 
-# ensure discordv2 is listed as one of the DBs. if not, run:
+# create a new database
 CREATE DATABASE discordv2;
 
-# exit from postgres
+# exit psql
+\q
+
+# back to normal shell
+exit
 ```
 
-Change `PSQL_URI` in `main.go`, or export the URI from shell.
+---
 
-2. Apply DB schema from shell:
+### 2. Apply Schema
+
 ```bash
 psql -U postgres -d discordv2 -f db/schema.sql
 ```
 
-3. Ensure all environment variables are set up:
+---
 
-- PSQL_URI
-- RDB_URI
-- RDB_PASSWORD
-- POD_UID (optional)
+### 3. Set Environment Variables
 
-You can export them from the shell or change them in `main.go`.
-
-For example:
 ```bash
 export PSQL_URI="postgres://postgres:password@127.0.0.1:5432/discordv2"
 export RDB_URI="127.0.0.1:6379"
 export RDB_PASSWORD=""
 ```
 
-4. Build and run the binary:
+About PSQL_URI, check out the [docs](https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNSTRING).
+
+---
+
+### 4. Build and Run
+
 ```bash
 cd app/
+
 go build -o chat-app cmd/server/main.go
 
-# run the binary
 ./chat-app
-
-# example output
-# ./chat-app 
-# 2026/04/07 01:48:29 Server started, listening on port 8080
-# 2026/04/07 01:48:29 Pod ID: s1
 ```
 
-## Minikube
+---
 
-If you want to run it on minikube, follow the instructions below:
+## Running on Minikube
 
-1. Start `postgres` and `redis` pods with
+### 1. Deploy PostgreSQL and Redis
+
 ```bash
 kubectl apply -f postgres.yaml
 kubectl apply -f redis-store.yaml
 ```
 
-Ensure both are up and running:
+Verify:
+
 ```bash
 kubectl get all
-
-# ensure these two services are present, and their corresponding
-# pods are running
-
-# services:
-# NAME                       TYPE        CLUSTER-IP       EXTERNAL-IP   PORT(S)    AGE
-# service/postgres-service   ClusterIP   10.107.200.25    <none>        5432/TCP   4d9h
-# service/redis-service      ClusterIP   10.100.246.164   <none>        6379/TCP   4d10h
-
-# pods:
-# NAME                               READY   STATUS    RESTARTS      AGE
-# pod/postgres-85d48bd5df-7qrzp      1/1     Running   5 (25h ago)   4d9h
-# pod/redis-store-6559fb9469-7h2h2   1/1     Running   5 (25h ago)   4d10h
 ```
 
-2. Apply the `chat-ms` config from `/components`:
+Ensure that `redis-store` and `postgres` are listed and their `STATUS` is `Running`.
+
+---
+
+### 2. Deploy Application
+
 ```bash
 kubectl apply -f components/
 ```
 
-3. Don't forget to port-forward the `chat-ms` deployment so that
-you can access it from 127.0.0.1 host. By default, the app runs
-on port `8080`:
+Verify:
+
 ```bash
-kubectl port-forward deploy/chat-ms 8080:8080
+kubectl get all
 ```
 
-4. Optionally, you can change the number of replicas of `chat-ms`
-from `components/chat-ms.yaml` to 1 for predictable websocket
-connections. To do this, change `.spec.replicas` from `3` to `1`.
+Ensure that:
+- `chat-ms` pods are listed
+- Their `STATUS` is `Running`
+- A corresponding `chat-ms` service exists
 
-5. To read logs from any pod, do the following:
+---
+
+### 3. Expose Service (Minikube Tunnel)
+
 ```bash
-# get the pod ID
+minikube tunnel
+```
+
+In a new terminal:
+
+```bash
+kubectl get svc chat-service
+```
+
+Verify:
+- Look for the `EXTERNAL-IP` field
+- Access the app at:
+
+```bash
+http://<External-IP>:8080
+```
+
+Or test with:
+
+```bash
+curl http://<External-IP>:8080
+```
+
+Notes:
+- `minikube tunnel` must keep running in the background
+- Required for `LoadBalancer` services on Minikube
+
+> [!IMPORTANT]
+> Update the URI in `tests/main.py` for testing to `<External-IP>:8080`
+
+More info about **services** can be found in the [docs](https://kubernetes.io/docs/concepts/services-networking/service/).
+
+---
+
+### 4. Adjust Replicas (Optional)
+
+Edit file:
+`components/chat-ms.yaml`
+
+Change:
+```yaml
+# kubernetes will adjust number of running pods (instances of that deployment)
+spec.replicas: 1
+```
+
+More info about **deployments** can be found in the [docs](https://kubernetes.io/docs/concepts/workloads/controllers/deployment/).
+
+---
+
+### 5. View Logs
+
+This is useful for debugging.
+
+```bash
 kubectl get pods
 
-# example output
-# NAME                           READY   STATUS    RESTARTS      AGE
-# chat-ms-7795c88c54-6pct6       1/1     Running   3 (32m ago)   26h
-
-# read logs, or follow logs with -f flag
-kubectl logs [-f] chat-ms-7795c88c54-6pct6
-
-# example output
-# kubectl logs -f chat-ms-7795c88c54-6pct6
-# 2026/04/06 19:41:40 Server started, listening on port 8080
-# 2026/04/06 19:41:40 Pod ID: 6777bc41-652c-4def-9b81-a97b4386f140
+kubectl logs -f pod/<pod-id>
 ```
 
-# Testing
-There is a test script writting in python. If you want to run it,
-ensure you have python installed, then run the test:
+Furthermore, run
+```bash
+kubectl describe pod/<pod-id>
+```
+to get a detailed description of the Pod.
+
+More info about **Pods** can be found in the [docs](https://kubernetes.io/docs/concepts/workloads/pods/).
+
+---
+
+## Testing
+
+You **must** have `python` installed to run the test script provided in `tests` directory.
+
+Installation: https://www.python.org/downloads/
+
 ```bash
 python tests/main.py
 ```
 
-# API endpoints
+---
 
-__BASE URI: `http://127.0.0.1:8080`__
+## API Endpoints
 
-| Method | Endpoint                           | Description                                      |
-|--------|------------------------------------|--------------------------------------------------|
-| POST   | `/api/register`                    | Register a new user                              |
-| POST   | `/api/{guild_id}`                  | Join a guild                                     |
-| POST   | `/api/{guild_id}/{channel_id}`     | Send a message to a channel in a guild           |
-| GET    | `/ws/`                             | Establish initial WebSocket connection           |
-| GET    | `/ws/{guild_id}/{channel_id}`      | Switch active guild/channel for the connection   |
+Base URL:
+`http://127.0.0.1:8080`
+
+OR (for minikube): `http://<External-IP>:8080`
+
+| Method | Endpoint                      | Description                     |
+|--------|------------------------------|---------------------------------|
+| POST   | /api/register                | Register a new user            |
+| POST   | /api/{guild_id}              | Join a guild                   |
+| POST   | /api/{guild_id}/{channel_id} | Send a message                 |
+| GET    | /ws/                         | Initialize WebSocket           |
+| GET    | /ws/{guild_id}/{channel_id}  | Switch guild/channel           |
+
+---
