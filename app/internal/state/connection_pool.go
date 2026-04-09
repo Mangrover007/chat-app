@@ -1,33 +1,53 @@
 package state
 
 import (
-	"github.com/gorilla/websocket"
+	"sync"
+
+	// "github.com/gorilla/websocket"
 )
 
 type Conn_Pool struct {
-	pool       map[string]*websocket.Conn
+	// pool       sync.Map
+	pool       map[string]chan[]byte
 	guild_user map[string]map[string]bool
 	user_guild map[string]string
+	mu         sync.RWMutex
 }
 
 func NewConnPool() *Conn_Pool {
 	return &Conn_Pool{
-		pool: make(map[string]*websocket.Conn),
+		pool:       make(map[string]chan[]byte),
 		guild_user: make(map[string]map[string]bool),
 		user_guild: make(map[string]string),
 	}
 }
 
-func (cn *Conn_Pool) Get_WS_Conn(user_id string) *websocket.Conn {
+func (cn *Conn_Pool) Get_WS_Conn(user_id string) chan[]byte {
 	// log.Print("DELIVERING WS FOR USER ID: ", user_id)
 	// defer log.Print("DELIVERED WS FOR USER ID: ", user_id)
+	cn.mu.RLock()
+	defer cn.mu.RUnlock()
 	return cn.pool[user_id]
+	// ws, ok := cn.pool.Load(user_id)
+	// if !ok {
+	// 	return nil
+	// }
+	// return ws.(*websocket.Conn)
 }
 
-func (cn *Conn_Pool) Add_Conn(user_id string, ws *websocket.Conn) {
+func (cn *Conn_Pool) Add_Conn(user_id string, wc chan[]byte) {
 	// log.Print("ADDING WS FOR USER ID: ", user_id)
 	// defer log.Print("ADDED WS FOR USER ID: ", user_id)
-	cn.pool[user_id] = ws
+	cn.mu.Lock()
+	defer cn.mu.Unlock()
+	cn.pool[user_id] = wc
+	// cn.pool.Store(user_id, ws)
+}
+
+func (cn *Conn_Pool) Remove_Conn(user_id string) {
+	cn.mu.Lock()
+	defer cn.mu.Unlock()
+	delete(cn.pool, user_id)
 }
 
 // func (cn *Conn_Pool) Change_Guild(user_id string, guild_id string) {
