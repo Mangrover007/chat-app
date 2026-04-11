@@ -71,7 +71,21 @@ func main() {
 		}
 	}
 
+	_, err = rdb.XGroupCreateMkStream(
+		context.Background(),
+		"db:write",
+		"db:consumer:1",
+		"$",
+	).Result()
+	if err != nil {
+		if !strings.Contains(err.Error(), "BUSYGROUP") {
+			log.Print("ERROR: Could not make stream: ", err.Error())
+			return
+		}
+	}
+	
 	go stream.Msg_Consumer(rdb, server_id, "group:g1", cp)
+	go stream.DB_Consumer(rdb, psql)
 
 	// ------------------------------------------------------------
 

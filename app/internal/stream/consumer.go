@@ -17,11 +17,31 @@ type BroadcastTask struct {
 
 func Msg_Consumer(rdb *redis.Client, stream, group string, cp *state.Conn_Pool) {
 	comms := make(chan BroadcastTask, 100000)
-	// db_chan := make(chan BroadcastTask, 100000)
+	db_chan := make(chan BroadcastTask, 100000)
 
 	go consumer(rdb, stream, group, cp, comms)
 	for i := 0; i < 4; i++ {
 		go worker(comms, cp)
+	}
+
+	for {
+		select {
+		case new_batch := <-db_chan:
+			msg := new_batch.Msg
+			rdb.XAdd(
+				context.Background(),
+				&redis.XAddArgs{
+					Stream: "db:write",
+					NoMkStream: true,
+					Values: map[string]interface{}{
+						"sender_id":    msg.Values["UserID"],
+						"channel_id":   "temp",
+						"text_content": msg.Values["Content"],
+						"created_at":   msg.Values["Timestamp"],
+					},
+				},
+			)
+		}
 	}
 }
 
