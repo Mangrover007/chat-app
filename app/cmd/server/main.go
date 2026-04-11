@@ -5,7 +5,8 @@ import (
 	"log"
 	"net/http"
 	"os"
-	
+	"strings"
+
 	"github.com/Mangrover007/discord-clone-2/app/internal/state"
 	"github.com/Mangrover007/discord-clone-2/app/internal/stream"
 	api "github.com/Mangrover007/discord-clone-2/app/internal/transport/http"
@@ -19,7 +20,7 @@ func main() {
 	// ------------------- LOAD ENV VARIABLES -------------------
 	var PSQL_URI = os.Getenv("DB_URL")
 	if PSQL_URI == "" {
-		PSQL_URI = "postgres://postgres:mango@postgres-service/discordv2"
+		PSQL_URI = "postgres://postgres:mango@127.0.0.1:5432/discordv2"
 	}
 
 	var REDIS_URI = os.Getenv("REDIS_URL")
@@ -56,7 +57,7 @@ func main() {
 		Password: REDIS_PASSWORD,
 	})
 
-	// -------------------- REDIS STREAM -------------------------
+	// -------------------- REDIS STREAMS ------------------------
 	_, err = rdb.XGroupCreateMkStream(
 		context.Background(),
 		"server:" + server_id,
@@ -64,11 +65,13 @@ func main() {
 		"$",
 	).Result()
 	if err != nil {
-		log.Print("ERROR: Could not make stream: ", err.Error())
-		return
+		if !strings.Contains(err.Error(), "BUSYGROUP") {
+			log.Print("ERROR: Could not make stream: ", err.Error())
+			return
+		}
 	}
 
-	go stream.Consumer(rdb, server_id, "group:g1", cp)
+	go stream.Msg_Consumer(rdb, server_id, "group:g1", cp)
 
 	// ------------------------------------------------------------
 
