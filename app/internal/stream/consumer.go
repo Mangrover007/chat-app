@@ -10,9 +10,45 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-func Consumer(rdb *redis.Client, stream string, group string, cp *state.Conn_Pool) {
+type BroadcastTask struct {
+	Members []string
+	Msg     redis.XMessage
+}
+
+func Msg_Consumer(rdb *redis.Client, stream, group string, cp *state.Conn_Pool) {
+	comms := make(chan BroadcastTask, 100000)
+	db_chan := make(chan BroadcastTask, 100000)
+
+	go consumer(rdb, stream, group, cp, comms)
+	for i := 0; i < 4; i++ {
+		go worker(comms, cp)
+	}
+
+	for {
+		select {
+		case new_batch := <-db_chan:
+			msg := new_batch.Msg
+			rdb.XAdd(
+				context.Background(),
+				&redis.XAddArgs{
+					Stream: "db:write",
+					NoMkStream: true,
+					Values: map[string]interface{}{
+						"sender_id":    msg.Values["UserID"],
+						"channel_id":   "temp",
+						"text_content": msg.Values["Content"],
+						"created_at":   msg.Values["Timestamp"],
+					},
+				},
+			)
+		}
+	}
+}
+
+func consumer(rdb *redis.Client, stream, group string, cp *state.Conn_Pool, comms chan BroadcastTask) {
 	
 	var backlog = true
+	var count int64 = 100000
 
 	for {
 		var myid string
@@ -27,7 +63,7 @@ func Consumer(rdb *redis.Client, stream string, group string, cp *state.Conn_Poo
 			Group: group,
 			Block: 0,
 			Consumer: "consumer:c1",
-			Count: 100000,
+			Count: count,
 		}).Result()
 
 		// log.Print("READ")
@@ -51,27 +87,43 @@ func Consumer(rdb *redis.Client, stream string, group string, cp *state.Conn_Poo
 		}
 		
 		// log.Printf("New Message: %+v", res[0].Messages)
-		
 		for _, msg := range res[0].Messages {
 			guild_id := msg.Values["Guild"]
-			res, err := rdb.SMembers(
+			members, err := rdb.SMembers(
 				context.Background(),
 				"guild:" + guild_id.(string),
-				).Result()
-				if err != nil {
-					// log.Printf("ERROR (consumer.go): %s, on line %d", err.Error(), 62)
-					continue
-				}
-				var users = make(map[string]bool)
-				for _, member := range res {
-					val := strings.Split(member, ":")
-					users[val[0]] = true
-				}
-				// users := cp.Get_Users_From_Guild(guild_id.(string))
+			).Result()
+			if err != nil {
+				// log.Printf("ERROR (consumer.go): %s, on line %d", err.Error(), 62)
+				continue
+			}
+			comms <- BroadcastTask{
+				Members: members,
+				Msg: msg,
+			}
+			
+			rdb.XAck(context.Background(), "server:" + stream, group, msg.ID)
+		}
+		
+
+		log.Printf("Delivered all %d messages.", len(res[0].Messages))
+	}
+}
+
+func worker(comms chan BroadcastTask, cp *state.Conn_Pool) {
+	for {
+		select {
+		case new_batch := <-comms:
+			var users = make(map[string]bool)
+			for _, member := range new_batch.Members {
+				val := strings.Split(member, ":")
+				users[val[0]] = true
+			}
+			// users := cp.Get_Users_From_Guild(guild_id.(string))
+			
+			// log.Printf("USER ID LIST: %+v", users)
 				
-				// log.Printf("USER ID LIST: %+v", users)
-				
-			data, _ := json.Marshal(msg.Values)
+			data, _ := json.Marshal(new_batch.Msg.Values)
 			for user_id, _ := range users {
 				// DONT skip this guy
 				// if user_id == msg.Values["UserID"] {
@@ -102,8 +154,6 @@ func Consumer(rdb *redis.Client, stream string, group string, cp *state.Conn_Poo
 				}
 				wc <- data
 			}
-
-			rdb.XAck(context.Background(), "server:" + stream, group, msg.ID)
 		}
 	}
 }
