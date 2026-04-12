@@ -2,7 +2,6 @@ package http
 
 import (
 	"encoding/json"
-	"io"
 	"log"
 	"net/http"
 	"time"
@@ -30,14 +29,8 @@ func (mh *MessageHandler) Msg_handler(w http.ResponseWriter, r *http.Request) {
 	channel_id := r.PathValue("channel_id")
 	uid := r.Header.Get("x-uid")
 
-	p, err := io.ReadAll(r.Body)
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-
 	var payload domain.Payload
-	err = json.Unmarshal(p, &payload)
+	err := json.NewDecoder(r.Body).Decode(&payload)
 
 	if err != nil {
 		log.Print("ERROR (http.handlers.go): ", err.Error())
@@ -48,6 +41,11 @@ func (mh *MessageHandler) Msg_handler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 
 	timestamp := time.Now().UTC()
+	json.NewEncoder(w).Encode(map[string]any{
+		"Content": payload.Content,
+		"Sender": uid,
+		"Timestamp": timestamp,
+	})
 
 	// Add message to Redis stream belonging to this Pod
 	mh.ms.Send_msg(&domain.Message{
@@ -56,12 +54,6 @@ func (mh *MessageHandler) Msg_handler(w http.ResponseWriter, r *http.Request) {
 		Guild:    guild_id,
 		Channel:  channel_id,
 		Timestamp: timestamp,
-	})
-
-	json.NewEncoder(w).Encode(map[string]any{
-		"Content": payload.Content,
-		"Sender": uid,
-		"Timestamp": timestamp,
 	})
 }
 

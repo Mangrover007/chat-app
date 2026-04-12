@@ -85,7 +85,7 @@ func main() {
 	}
 	
 	go stream.Msg_Consumer(rdb, server_id, "group:g1", cp)
-	go stream.DB_Consumer(rdb, psql)
+	go stream.DB_Consumer(rdb, psql, "db:write", "db:consumer:1")
 
 	// ------------------------------------------------------------
 

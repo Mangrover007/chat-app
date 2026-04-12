@@ -1,6 +1,10 @@
 package domain
 
-import "time"
+import (
+	"time"
+
+	"github.com/redis/go-redis/v9"
+)
 
 type Payload struct {
 	Content  string `json:"content"`
@@ -17,4 +21,16 @@ type Message struct {
 	Guild     string // TODO: UUID later
 	Channel   string // TODO: UUID later
 	Timestamp time.Time
+}
+
+type BroadcastTask struct {
+	Members []string
+	Msg     redis.XMessage
+}
+
+type DB_Msg struct {
+	Sender_id    string
+	Channel_id   string
+	Text_content string
+	Created_at   string
 }
